@@ -1,0 +1,506 @@
+---
+title: Exocomet simulations
+format:
+  html:
+    code-fold: true
+    page-layout: full
+jupyter: python3
+---
+
+
+:::: {layout="[90,10]"}
+
+::: {#text-col}
+### Théo Vrignaud — June 4, 2026
+
+***
+:::
+
+::: {#gif-col style="display: flex; align-items: center; justify-content: center;"}
+![](giphy.gif)
+:::
+
+::::
+
+This notebook presents simulations of sublimating exocomets in the Beta Pictoris system. These simulations were performed using the **EVaporating Exoplanet** code (EVE), initially developed to model atmospheric escape from exoplanets (see, e.g., [Bourrier et al. 2014, A&A, 565](https://www.aanda.org/articles/aa/full_html/2014/05/aa23064-13), A105; [Bourrier et al. 2016, A&A, 591, A121](https://www.aanda.org/articles/aa/full_html/2016/07/aa28362-16))
+
+The present notebook is available at https://github.com/TVrignaud/Exocomet_simulations
+
+```{python}
+import numpy as np
+import plotly.graph_objects as go
+from bindensity import resampling
+from IPython.display import Video
+from IPython.display import HTML
+
+
+
+const_c_km = 299792.458                         # km/s
+rv_beta_pic = 20.5                              # Brandeker+2011
+fact_redshift = (1 + rv_beta_pic/const_c_km)    # Conversion from heliocentric frame to Beta Pic
+
+
+
+# A function to calculate the edge of a wavelength table
+def def_edge_tab(cen_bins):
+    mid_bins = 0.5*(cen_bins[0:-1]+cen_bins[1::])
+    low_bins_st =cen_bins[0] - (mid_bins[0] - cen_bins[0])
+    high_bins_end = cen_bins[-1] + (cen_bins[-1]-mid_bins[-1])
+    edge_bins =  np.concatenate(([low_bins_st], mid_bins,[high_bins_end]))
+
+    return edge_bins
+```
+
+***
+# View of a few $\beta$ Pic spectra from the HARPS spectrograph
+
+I begin this notebook by providing a few examples of typical exocomet signatures observed in the $\beta$ Pic spectrum, and particularly in the **Ca II H&K lines**, accessible from ground-based spectroscopy. 
+
+$\beta$ Pic was observed over more than 200 individual nights by the **HARPS spectrograph**, mounted on the 3.6m telescope of La Silla observatory, Chile. During most of these nights, the star was observed during several hours continuously, allowing the detection of numerous exocomet signatures in Ca II lines and a detailed monitoring of their **temporal evolution**. 
+
+For instance, the plots below provide views of the $\beta$ Pic spectra obtained on December 5, 2017 (8 hours of observations) and March 30, 2018 (4 hours). 
+
+During both nights, the Ca II H&K lines displayed strong signatures from transiting exocomets, including signatures at low radial velocities (typically < 30 km/s) which do not vary substantially during the course of each night, and redshifted signatures at larger velocities (typically ~ 100 km/s) which show significant temporal variations. As shown by the absorption maps below, the velocities of these signatures tend to increase over time. As shown by [Kennedy, MNRAS, 479, 2](https://academic.oup.com/mnras/article/479/2/1997/5033700), these acceleration are naturally interpreted as reflecting the stellar gravity force, and therefore directly probe the transit distance of the objects. 
+
+The goal of the simulations presented in the following will be to reproduce such high-velocity signatures
+
+***
+
+```{python}
+# Retrieve Beta Pic observations obtained on December 5, 2017 and March 30, 2018 with the HARPS spectrograph
+
+# The dictionnary is organised as follows :
+#    - spec_dic['spec_renorm'] contains the spectra, organised by instrument ('HARPS'), date of observation ('2017-12-05' and '2018-03-30'), and index of the spectra (1 to ~200 for both nights).
+#    - spec_dic['common_wl'] contains the wavelength table, common to all spectra. The wavelength table is limited to the [3900,4000] Angstroms range. 
+#    - spec_dic['reference'] contains a reference spectrum of the stellar photospheric flux, free of any circumstellar or interstellar contamination. 
+
+spec_dic = np.load('Data_Beta_Pic_HARPS_2017_2018.npy', allow_pickle = True).item()
+```
+
+```{python}
+# A function to overplot a list of spectra obtained durin a given night
+#     + If line is None, the spectra are plotted as a function of wavelength
+#     + If line = X, the spectra are plotted vs radial velocity, relative to the wavelength X.
+#     + Set reference = 'Photospheric continuum' to show the unnoculted Beta Pic spectrum.
+
+def quick_plot(spec_dic, inst, date, line = None, reference = None, xlim = None, ylim = None, loc_label = 'lower right', title = None) : 
+
+    fig = go.Figure()
+
+    wl_table = spec_dic['common_wl'][inst] / fact_redshift
+    if line is not None : x = (wl_table - line) / line * const_c_km
+    else                : x =  wl_table
+    if xlim is not None: cond_plot = ((x >= xlim[0]) & (x <= xlim[1]))
+    else               : cond_plot = np.ones_like(x, dtype = bool)
+
+    # Plot individual spectra
+    for spec in spec_dic['spec_renorm'][inst][date] : 
+        if spec == 'Average night' : width, alpha = 2.5, 1
+        else                       : width, alpha = 1.2, 0.3
+        y = spec_dic['spec_renorm'][inst][date][spec]['flux']
+        fig.add_trace(go.Scatter(
+            x=x[cond_plot], y=y[cond_plot],
+            mode='lines',
+            name=spec,
+            legendgroup=date,
+            showlegend=(spec == 'Average night'),
+            line=dict(width=width),
+            opacity=alpha
+        ))
+
+
+    # Plot reference spectrum
+    if reference is not None:
+        spline        = spec_dic['reference'][inst][reference]['spline']
+
+        x_ref = wl_table[cond_plot]
+        y_ref = spline(x_ref*fact_redshift)
+
+        if line is not None: x_ref = (x_ref - line) / line * const_c_km
+
+
+        fig.add_trace(go.Scatter(
+            x=x_ref, y=y_ref,
+            mode='lines',
+            name=reference,
+            line=dict(color='black', width=4),
+        ))
+
+
+    # Figure layout
+    legend_anchor_map = {
+    'best':         {},   
+    'upper right':  dict(x=0.99, y=0.99, xanchor='right',  yanchor='top'),
+    'upper left':   dict(x=0.01, y=0.99, xanchor='left',   yanchor='top'),
+    'lower right':  dict(x=0.99, y=0.01, xanchor='right',  yanchor='bottom'),
+    'lower left':   dict(x=0.01, y=0.01, xanchor='left',   yanchor='bottom'),
+    'upper center': dict(x=0.5,  y=0.99, xanchor='center', yanchor='top'),
+    'lower center': dict(x=0.5,  y=0.01, xanchor='center', yanchor='bottom'),
+    }
+    legend_pos = legend_anchor_map.get(loc_label, {})
+
+    xlabel = "Radial velocity (km/s)" if line is not None else "Wavelength (Å)"
+
+    mt, mb = 65, 80  # marges haut et bas
+    total_height = 400 + mt + mb
+    ml, mr = 100, 150
+    total_width = 1000 + ml + mr
+
+    fig.update_layout(
+        font=dict(family='STIX Two Text'),
+        title=dict(
+        font=dict(size=22),
+        text=title,
+        x=0.5,        
+        y= 1 - mt / total_height + 20/total_height,
+        xanchor='center',
+        yanchor='bottom'
+       ),
+        width=total_width,   # plot_width + marge_gauche + marge_droite
+        height=total_height,     # plot_height + marge_haut + marge_bas
+        margin=dict(l=ml, r=mr, t=mt, b=mb, autoexpand=False, pad = 10),
+        xaxis=dict(
+            title=dict(text=xlabel, font=dict(size=22), standoff=20),
+            range=xlim,
+            automargin=True,
+            tickfont=dict(size=16),
+            ticklabelstandoff=-5
+
+        ),
+        yaxis=dict(
+            title=dict(text="Flux (erg/s/cm²/Å)", font=dict(size=22)),
+            range=ylim,
+            rangemode='nonnegative',
+            exponentformat='power',  
+            showexponent='all',       
+            automargin=True,
+            tickfont=dict(size=16),
+        ),
+        legend=dict(font=dict(size=16), borderwidth=1, tracegroupgap=0, **legend_pos),
+        template='plotly_white',
+        shapes=[dict(
+        type='rect',
+        xref='paper', yref='paper',
+        x0=0, y0=0, x1=1, y1=1,
+        line=dict(color='black', width=1),
+        )]
+    )
+
+    fig.show()
+    return None
+```
+
+```{python}
+# A function to compute and plot the evolution of exocomet signatures during a given night. The function builds a map showing all spectra obtained during the night simultaneously
+#     + the x-axis represents radial velocity (relative to a given line, specified through line = XXXX.XX), 
+#     + the y axis represents time (increasing from bottom to top) 
+#     + the colors shades represent the level of absorption: 1 = no absorption, 0.9 = 10% absorption, etc. 
+
+def absorption_map(spec_dic, inst, date, line, reference, rv_range, flux_range, time_range = None, timestep = None, rvstep = None, title = None): 
+
+    # Retrieve the start times and exposures times of the required spectra
+    list_spec = []
+    list_start_times_mjd = []
+    list_exp_times_hours_secs = []
+    for spec in spec_dic['spec_renorm'][inst][date] :
+        if spec != 'Average night' : 
+            list_spec.append(spec)
+            list_start_times_mjd.append(spec_dic['spec_renorm'][inst][date][spec]['start_time'])
+            list_exp_times_hours_secs.append(spec_dic['spec_renorm'][inst][date][spec]['exp_time'])
+
+    # Convert everything to hours
+    mjd_ref = np.min(list_start_times_mjd)
+    start_times_hours = (np.array(list_start_times_mjd) - mjd_ref)*24    # days -> hours
+    exp_times_hours = np.array(list_exp_times_hours_secs)/3600           # secs -> hours
+
+    # Sort the spectra by increasing start times
+    order_times = np.array(list_start_times_mjd).argsort()
+    list_spec = np.array(list_spec)[order_times]
+    start_times_hours = start_times_hours[order_times]
+    exp_times_hours = exp_times_hours[order_times]
+
+    # Mask spectra outside time_range
+    if time_range is not None : 
+        mask = (start_times_hours >= time_range[0]) & (start_times_hours <= time_range[1])
+        list_spec = list_spec[mask]
+        start_times_hours = start_times_hours[mask]
+        exp_times_hours = exp_times_hours[mask]
+    
+    # Increase the exposure times to fill the gaps between exposures (up to 5 min gaps)
+    exp_times_hours_full = list(np.array(start_times_hours[1:])-np.array(start_times_hours[:-1])) + [exp_times_hours[len(start_times_hours) - 1]]   
+    for i in range(len(exp_times_hours)) : 
+        if exp_times_hours_full[i] - exp_times_hours[i] > 5/60 : exp_times_hours_full[i] = exp_times_hours[i]
+    exp_times_hours = exp_times_hours_full.copy()
+
+    # Retrieve the common wl grid and the RV table relative to the specified line
+    common_wl  = spec_dic['common_wl'][inst]/fact_redshift
+    common_rv = (common_wl - line)/line * const_c_km
+    cond_plot = (common_rv > rv_range[0]) & (common_rv < rv_range[1])
+
+    # Retrieve the reference spectrum 
+    continuum = spec_dic['reference'][inst][reference]['spline'](common_wl*fact_redshift)
+
+    # Create XYZ table to plot
+    X = common_rv[cond_plot]                
+    Y = np.linspace(np.min(start_times_hours),np.max(start_times_hours + exp_times_hours),1000)    # T
+    Z     = np.zeros((len(X), len(Y))) * np.nan
+    for j in range(len(Y)):
+        for k in range(len(start_times_hours)):
+            if start_times_hours[k] < Y[j] < start_times_hours[k] + exp_times_hours[k] : 
+                if False : break
+                else     : offset = 0
+                Z[:,j]     = spec_dic['spec_renorm'][inst][date][list_spec[k]]['flux'] [cond_plot] / continuum[cond_plot] - offset
+
+    # If required, resample the spectra on a new timetable
+    if timestep is not None : 
+        nstep = int(  round( (np.max(Y) - np.min(Y))//timestep )  )
+        timestep_true = (np.max(Y) - np.min(Y))/nstep
+        new_Y = np.linspace(np.min(Y) + timestep_true/2,  np.max(Y) - timestep_true/2, nstep)
+        new_Z = np.zeros((len(X), len(new_Y))) * np.nan
+        for i in range(len(X)): 
+            z_row = Z[i, :]
+            mask = ~np.isnan(z_row)
+            z_filled = np.interp(Y, Y[mask], z_row[mask])
+            new_Z[i, :] = resampling(def_edge_tab(new_Y), def_edge_tab(Y), z_filled, kind='cubic')
+        Y = new_Y
+        Z = new_Z
+
+    # If required, resample the spectra on a new rv table
+    if rvstep is not None : 
+        nstep = int(  round( (np.max(X) - np.min(X))//rvstep )  )
+        rvstep_true = (np.max(X) - np.min(X))/nstep
+        new_X = np.linspace(np.min(X) + rvstep_true/2,  np.max(X) - rvstep_true/2, nstep)
+        new_Z = np.zeros((len(new_X), len(Y))) * np.nan
+        for j in range(len(Y)): 
+            new_Z[:,j] = resampling(def_edge_tab(new_X), def_edge_tab(X), Z[:,j], kind = 'cubic')
+        X = new_X
+        Z = new_Z
+
+    # Plot the map
+    fig = go.Figure(go.Heatmap(
+        x=X,
+        y=Y,
+        z=np.transpose(Z),
+        colorscale='Plasma',
+        zmin=flux_range[0],
+        zmax=flux_range[1],
+        colorbar=dict(
+            title=dict(text='Relative flux', side='right', font=dict(size=22)),
+            tickfont=dict(size=18),
+            thickness=15,
+        ),
+        ))
+    
+    # Figure layout
+    mt, mb = 65, 80  # margins
+    total_height = 600 * (np.max(Y) - np.min(Y))/8 + mt + mb
+    ml, mr = 100, 150
+    total_width = 1000 + ml + mr
+
+    fig.update_layout(
+        font=dict(family='STIX Two Text'),
+        title=dict(
+        font=dict(size=22),
+        text=title,
+        x=0.5,        
+        y= 1 - mt / total_height + 20/total_height,
+        xanchor='center',
+        yanchor='bottom'
+       ),
+        width=total_width,   
+        height=total_height,     
+        margin=dict(l=ml, r=mr, t=mt, b=mb),
+        xaxis=dict(
+            title=dict(text="Radial velocity (km/s)", font=dict(size=22), standoff=20),
+            range=rv_range,
+            automargin=True,
+            tickfont=dict(size=16),
+            ticklabelstandoff=-5
+
+        ),
+        yaxis=dict(
+            title=dict(text="Time (hours)", font=dict(size=22)),
+            rangemode='nonnegative',
+            exponentformat='power',  
+            showexponent='all',       
+            automargin=True,
+            tickfont=dict(size=16),
+        ),
+    )
+
+    fig.show()
+    return None
+```
+
+### 2017-12-05
+
+In addition to strong exocomet features at low velocities, a short exocomet event is observed between 4 and 7 hours after the beginning of the night, around $v = 80$ km/s. This event exhibit a strong acceleration (~ 12 km/s/h), placing the cometary cloud at about $\sim 8 R_\star$ from the star.
+
+```{python}
+inst = 'HARPS'
+date = '2017-12-05'
+rv_range = [-200,200]
+reference = 'Photospheric continuum'
+
+quick_plot(spec_dic, inst, date, line = 3933.663, reference = reference, xlim = rv_range, ylim = None, loc_label = 'lower right', title = date + r' - Ca II K - 3933.7 Å')
+quick_plot(spec_dic, inst, date, line = 3968.469, reference = reference, xlim = rv_range, ylim = None, loc_label = 'lower right', title = date + r' - Ca II H - 3968.5 Å')
+
+
+flux_range= [0.9,1.01]
+timestep = 6/60
+rvstep = 2
+absorption_map(spec_dic, inst, date, 3933.663, reference, rv_range, flux_range, timestep = timestep, rvstep = rvstep, title = date + r' - Ca II K - 3933.6 Å')
+absorption_map(spec_dic, inst, date, 3968.469, reference, rv_range, flux_range, timestep = timestep, rvstep = rvstep, title = date + r' - Ca II H - 3968.5 Å')
+```
+
+### 2018-03-30
+
+The situation here is similar to the one observed on December 5, 2017. Strong stable features are observed from -50 to +50 km/s, while several variable features can be observed around +100 km/s. The acceleration of these features is about 15-20 km/s, placing the comets at only $6-7 r_\star$ from $\beta$ Pic.
+
+```{python}
+inst = 'HARPS'
+date = '2018-03-30'
+rv_range = [-200,200]
+reference = 'Photospheric continuum'
+
+quick_plot(spec_dic, inst, date, line = 3933.663, reference = reference, xlim = rv_range, ylim = None, loc_label = 'lower right', title = date + r' - Ca II K - 3933.7 Å')
+quick_plot(spec_dic, inst, date, line = 3968.469, reference = reference, xlim = rv_range, ylim = None, loc_label = 'lower right', title = date + r' - Ca II K - 3968.5 Å')
+
+
+flux_range= [0.75,1.02]
+timestep = 6/60
+rvstep = 2
+absorption_map(spec_dic, inst, date, 3933.663, reference, rv_range, flux_range, timestep = timestep, rvstep = rvstep, title = date + r' - Ca II K - 3933.6 Å')
+absorption_map(spec_dic, inst, date, 3968.469, reference, rv_range, flux_range, timestep = timestep, rvstep = rvstep, title = date + r' - Ca II K - 3968.5 Å')
+```
+
+***
+# Exocomet simulations
+
+
+Here, I present a example of exocomet simulation, aimed at reproducing the high-velocity features observed on December 5, 2017 and March 30, 2018. These simulations were performed using the **EVaporating Exoplanet** code (EVE). This simulation incorporates several key physical ingredients : 
+
+- We start by considering a cometary nucleus, orbiting $\beta$ Pic on a nearly parabolic orbit. Here, the periastron distance of the nucleus is 0.04 au (about $5.6 R_\star$) and the argument of periastron is 140°. The comet thus transits the star before its periastron. 
+- The comet nucleus is assumed to only release dust particles. The production rate is taken to be proportionnal to $d^{-2}$, and is equal to $5\times10^5$ kg/s at 1 au from the star. The dust emission is isotropic, and dust grains are ejected with an escape velocity of 1 km/s.
+- Dust grain sizes range from 0.5 to 10 microns, with a size distribution $\propto r^{-3}$. Their absorption cross-section is taken to be that of spherical olivine grains, derived from Mie theory.
+- By absorbing the stellar photons, dust grains are repelled away from the star (radiation pressure) and are heated up. When hot enough (typically above 1200 K), the grains can sublimate, and their mass is entirely converted into gas. 
+- The gas particles released from dust sublimation are assumed to have a typical cometary composition, as measured in [Vrignaud et al. 2025](https://www.aanda.org/articles/aa/full_html/2025/05/aa53568-24) (A&A, 697, A21) and [Vrignaud & Lecavelier 2026](https://www.researchsquare.com/article/rs-9515646/v1) (submitted to Nature Astronomy). Metals (Fe, Mg, Si...) and Oxygen are taken to be solar; C/Fe = 20; H = 2$\times$O; and noble gas are not considered. 
+- The gas dynamics is computed by combining gravity and radiation pressure, and assuming a radiation pressure-to-gravity ratio ($\beta$) of 0.1. This reproduces the average $\beta$ factor of a gaseous tail with the elemental composition listed above and a fairly high level of ionisation ($\text{Fe}^+/\text{Fe} \sim 0.05$, $\text{Ca}^+/\text{Ca} \sim 0.005$; the rest being stored in $\text{Fe}^{2+}$ and $\text{Ca}^{2+}$). In this case, the radiation pressure is mainly dominated by Fe+ ions. 
+- Finally, the absorption signature of the comet is computed in Fe II, Mg II and Ca II lines. Importantly, the comet's signatures in those lines are ponderated by the elemental abundances of Fe, Mg and Ca, by the populations of these elements in their singly ionised states, and, for Fe II, by the excitation state, assuming an excitation temperature of 8000 K. 
+
+
+The evolution of the dust and gaseous tails of the comets are displayed in the video below, along with the comet's signatures in the two Fe II lines near 2600 A (rising from the ground and first excited state), in the Mg II k line at 2796 A, and in the Ca II K line at 3933 A. 
+
+The simulation starts when the comet is far from the star ($\sim0.4$au). At such distance, dust sublimation is not very efficient, allowing a dust tail to form. Then, when the comet gets close to the star (within $\sim 0.1$ au), the dust grains are quickly sublimated, and are transformed into gas. When the gaseous tail transit the star, it produces absorption signature in the stellar spectrum, here computed in a few Fe II, Mg II and Ca II lines. Finally, after perihelion, the comet leaves the stellar vicinity, dust grains are not sublimated anymore, and the dust tail reforms.
+
+***
+
+```{python}
+Video("Full_simu.mp4", width=1800, html_attributes="controls autoplay loop")
+```
+
+# Simulated absortion map in the Ca II K line
+
+
+The comet displays a strong signature in Ca II lines from -1h to +3 relative to the nucleus mid-transit. The object acceleration is clearly visible; it reproduces well the signatures observed in the HARPS data.
+
+```{python}
+# Retrieve the simulated absorption in Fe II, Mg II and Ca II lines
+
+spec_dic_simu = np.load('Data_comet_simu.npy', allow_pickle = True).item()
+```
+
+```{python}
+# A function to plot the simulated comet signature around a given line over its full transit
+#     + The function builds a map showing all spectra obtained during the simulation, similarly to 'absorption_map'
+#     + 'wl_domain' can be 'Fe II', 'Mg II', 'Ca II K' or 'Ca II H'
+#     + the reference line is specified through 'line'
+
+def absorption_map_simu(spec_dic_simu, wl_domain, line, rv_range, flux_range, time_range = None, title = None) : 
+
+    # List of time steps
+    list_times = np.array(list(spec_dic_simu['Ca II K']['abs'].keys()))
+
+    # Wavelength table
+    wl = spec_dic_simu[wl_domain]['wl']
+    rv = (wl - line)/line * 3e5
+
+    if time_range is not None : cond_time = (time_range[0] < list_times) & (list_times < time_range[1])
+    else                      : cond_time = np.ones_like(list_times, dtype = bool)
+    cond_rv = (rv_range[0] < rv) & (rv < rv_range[1])
+
+    # Build X, Y, Z to plot
+    X = rv[cond_rv]                    # RV
+    Y = np.sort(list_times[cond_time])
+    Z = np.zeros((len(X), len(Y))) * np.nan
+
+    for j_time, time in enumerate(Y) :
+        absorp = 1 - spec_dic_simu[wl_domain]['abs'][time]
+        Z[:,j_time] = absorp[cond_rv]
+
+    # Plot map
+    fig = go.Figure(go.Heatmap(
+        x=X,
+        y=Y,
+        z=np.transpose(Z),
+        colorscale='Plasma',
+        zmin=flux_range[0],
+        zmax=flux_range[1],
+        colorbar=dict(
+            title=dict(text='Relative flux', side='right', font=dict(size=22)),
+            tickfont=dict(size=18),
+            thickness=15,
+        ),
+        ))
+
+    # Figure layout
+    mt, mb = 65, 80  # marges haut et bas
+    total_height = 600 * (np.max(Y) - np.min(Y))/8 + mt + mb
+    ml, mr = 100, 150
+    total_width = 1000 + ml + mr
+
+    fig.update_layout(
+        font=dict(family='STIX Two Text'),
+        title=dict(
+        font=dict(size=22),
+        text=title,
+        x=0.5,        
+        y= 1 - mt / total_height + 20/total_height,
+        xanchor='center',
+        yanchor='bottom'
+       ),
+        width=total_width,   # plot_width + marge_gauche + marge_droite
+        height=total_height,     # plot_height + marge_haut + marge_bas
+        margin=dict(l=ml, r=mr, t=mt, b=mb),
+        xaxis=dict(
+            title=dict(text="Radial velocity (km/s)", font=dict(size=22), standoff=20),
+            range=rv_range,
+            automargin=True,
+            tickfont=dict(size=16),
+            ticklabelstandoff=-5
+
+        ),
+        yaxis=dict(
+            title=dict(text="Time (hours)", font=dict(size=22)),
+            exponentformat='power',  
+            showexponent='all',       
+            automargin=True,
+            tickfont=dict(size=16),
+        ),
+    )
+
+    fig.show()
+    return None
+```
+
+```{python}
+wl_domain = 'Ca II K'     
+line = 3934.78              # Angstrom
+time_range = [-2,4.5]     # hours
+rv_range= (-200,200)        # km/s
+flux_range= [0.9,1.01]      # 1 = no absorption, 0.9 = 10% absorption
+
+absorption_map_simu(spec_dic_simu, wl_domain, line, rv_range, flux_range, time_range = time_range, title = r'Simulated transit - Ca II K - 3933.6 Å')
+```
+
+
