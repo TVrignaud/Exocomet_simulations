@@ -22,9 +22,9 @@ jupyter: python3
 
 ::::
 
-This notebook presents simulations of sublimating exocomets in the Beta Pictoris system. These simulations were performed using the **EVaporating Exoplanet** code (EVE), initially developed to model atmospheric escape from exoplanets (see, e.g., [Bourrier et al. 2014, A&A, 565](https://www.aanda.org/articles/aa/full_html/2014/05/aa23064-13), A105; [Bourrier et al. 2016, A&A, 591, A121](https://www.aanda.org/articles/aa/full_html/2016/07/aa28362-16))
+This notebook presents simulations of sublimating exocomets in the Beta Pictoris system. These simulations were performed using the **EVaporating Exoplanet** code (EVE), initially developed to model atmospheric escape from exoplanets (see, e.g., [Bourrier et al. 2014, A&A, 565, A105](https://www.aanda.org/articles/aa/full_html/2014/05/aa23064-13); [Bourrier et al. 2016, A&A, 591, A121](https://www.aanda.org/articles/aa/full_html/2016/07/aa28362-16))
 
-The present notebook is available at https://github.com/TVrignaud/Exocomet_simulations
+The present notebook can be downloaded at [https://github.com/TVrignaud/Exocomet_simulations](https://github.com/TVrignaud/Exocomet_simulations)
 
 ```{python}
 import numpy as np
@@ -56,13 +56,13 @@ def def_edge_tab(cen_bins):
 
 I begin this notebook by providing a few examples of typical exocomet signatures observed in the $\beta$ Pic spectrum, and particularly in the **Ca II H&K lines**, accessible from ground-based spectroscopy. 
 
-$\beta$ Pic was observed over more than 200 individual nights by the **HARPS spectrograph**, mounted on the 3.6m telescope of La Silla observatory, Chile. During most of these nights, the star was observed during several hours continuously, allowing the detection of numerous exocomet signatures in Ca II lines and a detailed monitoring of their **temporal evolution**. 
+$\beta$ Pic was observed over more than 200 individual nights by the **HARPS spectrograph**, mounted on the 3.6m telescope in La Silla observatory, Chile. During most of these nights, the star was observed during several hours continuously, allowing the detection of numerous exocomet signatures in Ca II lines and a detailed monitoring of their **temporal evolution**. 
 
-For instance, the plots below provide views of the $\beta$ Pic spectra obtained on December 5, 2017 (8 hours of observations) and March 30, 2018 (4 hours). 
+For instance, the plots below provide views of the $\beta$ Pic spectra obtained on **December 5, 2017** (8 hours of observations) and **March 30, 2018** (4 hours). 
 
-During both nights, the Ca II H&K lines displayed strong signatures from transiting exocomets, including signatures at low radial velocities (typically < 30 km/s) which do not vary substantially during the course of each night, and redshifted signatures at larger velocities (typically ~ 100 km/s) which show significant temporal variations. As shown by the absorption maps below, the velocities of these signatures tend to increase over time. As shown by [Kennedy, MNRAS, 479, 2](https://academic.oup.com/mnras/article/479/2/1997/5033700), these acceleration are naturally interpreted as reflecting the stellar gravity force, and therefore directly probe the transit distance of the objects. 
+During both nights, the Ca II H&K lines displayed strong absorption signatures from transiting exocomets. These can be broadly divided into two categories: low-velocity signatures (typically < 30 km/s), which remain roughly stable throughout each night, and redshifted signatures at higher velocities (~ 100 km/s), which exhibit **significant temporal variations**. As shown in the absorption maps below, the radial velocities of these features tend to increase over time — a direct consequence of stellar gravity, therefore directly probing the transit distance of the comets ([Kennedy, MNRAS, 479, 2](https://academic.oup.com/mnras/article/479/2/1997/5033700)).
 
-The goal of the simulations presented in the following will be to reproduce such high-velocity signatures
+The aim of the simulation presented below is to reproduce these high-velocity signatures.
 
 ***
 
@@ -78,12 +78,13 @@ spec_dic = np.load('Data_Beta_Pic_HARPS_2017_2018.npy', allow_pickle = True).ite
 ```
 
 ```{python}
-# A function to overplot a list of spectra obtained durin a given night
+# A function to overplot a list of spectra obtained during a given night
 #     + If line is None, the spectra are plotted as a function of wavelength
 #     + If line = X, the spectra are plotted vs radial velocity, relative to the wavelength X.
 #     + Set reference = 'Photospheric continuum' to show the unnoculted Beta Pic spectrum.
+#     + set drop = n to plot every n-th spectrum only
 
-def quick_plot(spec_dic, inst, date, line = None, reference = None, xlim = None, ylim = None, loc_label = 'lower right', title = None) : 
+def quick_plot(spec_dic, inst, date, line = None, reference = None, drop = 1, xlim = None, ylim = None, loc_label = 'lower right', title = None) : 
 
     fig = go.Figure()
 
@@ -95,17 +96,20 @@ def quick_plot(spec_dic, inst, date, line = None, reference = None, xlim = None,
 
     # Plot individual spectra
     for spec in spec_dic['spec_renorm'][inst][date] : 
-        if spec == 'Average night' : width, alpha = 2.5, 1
-        else                       : width, alpha = 1.2, 0.3
+        if spec == 'Night average' : width, alpha, color = 3.5, 1, 'firebrick'
+        else                       : 
+            if int(spec)%drop != drop-1 : continue
+            width, alpha, color = 1.2, 0.3, None
         y = spec_dic['spec_renorm'][inst][date][spec]['flux']
         fig.add_trace(go.Scatter(
             x=x[cond_plot], y=y[cond_plot],
             mode='lines',
             name=spec,
             legendgroup=date,
-            showlegend=(spec == 'Average night'),
-            line=dict(width=width),
-            opacity=alpha
+            showlegend=(spec == 'Night average'),
+            line=dict(width=width,color=color),
+            opacity=alpha,
+            hoverinfo='skip' if spec != 'Night average' else 'all'
         ))
 
 
@@ -143,8 +147,8 @@ def quick_plot(spec_dic, inst, date, line = None, reference = None, xlim = None,
 
     mt, mb = 65, 80  # marges haut et bas
     total_height = 400 + mt + mb
-    ml, mr = 100, 150
-    total_width = 1000 + ml + mr
+    ml, mr = 120, 120
+    total_width = 850 + ml + mr
 
     fig.update_layout(
         font=dict(family='STIX Two Text'),
@@ -152,7 +156,7 @@ def quick_plot(spec_dic, inst, date, line = None, reference = None, xlim = None,
         font=dict(size=22),
         text=title,
         x=0.5,        
-        y= 1 - mt / total_height + 20/total_height,
+        y= 1 - mt / total_height + 12/total_height,
         xanchor='center',
         yanchor='bottom'
        ),
@@ -203,7 +207,7 @@ def absorption_map(spec_dic, inst, date, line, reference, rv_range, flux_range, 
     list_start_times_mjd = []
     list_exp_times_hours_secs = []
     for spec in spec_dic['spec_renorm'][inst][date] :
-        if spec != 'Average night' : 
+        if spec != 'Night average' : 
             list_spec.append(spec)
             list_start_times_mjd.append(spec_dic['spec_renorm'][inst][date][spec]['start_time'])
             list_exp_times_hours_secs.append(spec_dic['spec_renorm'][inst][date][spec]['exp_time'])
@@ -293,9 +297,9 @@ def absorption_map(spec_dic, inst, date, line, reference, rv_range, flux_range, 
     
     # Figure layout
     mt, mb = 65, 80  # margins
-    total_height = 600 * (np.max(Y) - np.min(Y))/8 + mt + mb
-    ml, mr = 100, 150
-    total_width = 1000 + ml + mr
+    total_height = 500 * (np.max(Y) - np.min(Y))/8 + mt + mb
+    ml, mr = 120, 120
+    total_width = 850 + ml + mr
 
     fig.update_layout(
         font=dict(family='STIX Two Text'),
@@ -303,7 +307,7 @@ def absorption_map(spec_dic, inst, date, line, reference, rv_range, flux_range, 
         font=dict(size=22),
         text=title,
         x=0.5,        
-        y= 1 - mt / total_height + 20/total_height,
+        y= 1 - mt / total_height + 12/total_height,
         xanchor='center',
         yanchor='bottom'
        ),
@@ -334,16 +338,17 @@ def absorption_map(spec_dic, inst, date, line, reference, rv_range, flux_range, 
 
 ### 2017-12-05
 
-In addition to strong exocomet features at low velocities, a short exocomet event is observed between 4 and 7 hours after the beginning of the night, around $v = 80$ km/s. This event exhibit a strong acceleration (~ 12 km/s/h), placing the cometary cloud at about $\sim 8 R_\star$ from the star.
+This night shows strong exocomet absorption at low velocities, along with a short-lived event near $v = 80$ km/s, observed roughly between 4 and 7 hours after the beginning of the observation. This objects accelerate rapidly towards the star (~ 12 km/s/h), indicating a transit distance of $\sim 8 R_\star$.
 
 ```{python}
 inst = 'HARPS'
 date = '2017-12-05'
 rv_range = [-200,200]
 reference = 'Photospheric continuum'
+drop = 5 
 
-quick_plot(spec_dic, inst, date, line = 3933.663, reference = reference, xlim = rv_range, ylim = None, loc_label = 'lower right', title = date + r' - Ca II K - 3933.7 Å')
-quick_plot(spec_dic, inst, date, line = 3968.469, reference = reference, xlim = rv_range, ylim = None, loc_label = 'lower right', title = date + r' - Ca II H - 3968.5 Å')
+quick_plot(spec_dic, inst, date, line = 3933.663, reference = reference, drop = drop, xlim = rv_range, ylim = None, loc_label = 'lower right', title = date + r' - Ca II K - 3933.7 Å')
+quick_plot(spec_dic, inst, date, line = 3968.469, reference = reference, drop = drop, xlim = rv_range, ylim = None, loc_label = 'lower right', title = date + r' - Ca II H - 3968.5 Å')
 
 
 flux_range= [0.9,1.01]
@@ -355,16 +360,17 @@ absorption_map(spec_dic, inst, date, 3968.469, reference, rv_range, flux_range, 
 
 ### 2018-03-30
 
-The situation here is similar to the one observed on December 5, 2017. Strong stable features are observed from -50 to +50 km/s, while several variable features can be observed around +100 km/s. The acceleration of these features is about 15-20 km/s, placing the comets at only $6-7 r_\star$ from $\beta$ Pic.
+The exocomet activity during that night is similar to the one observed on December 5, 2017. Strong, stable features are observed from -50 to +50 km/s, and several highly variable features appear sucessively around +100 km/s. The acceleration of these features is about 15-20 km/s, placing the comets at only $6-7 R_\star$ from $\beta$ Pic.
 
 ```{python}
 inst = 'HARPS'
 date = '2018-03-30'
 rv_range = [-200,200]
 reference = 'Photospheric continuum'
+drop = 5 
 
-quick_plot(spec_dic, inst, date, line = 3933.663, reference = reference, xlim = rv_range, ylim = None, loc_label = 'lower right', title = date + r' - Ca II K - 3933.7 Å')
-quick_plot(spec_dic, inst, date, line = 3968.469, reference = reference, xlim = rv_range, ylim = None, loc_label = 'lower right', title = date + r' - Ca II K - 3968.5 Å')
+quick_plot(spec_dic, inst, date, line = 3933.663, reference = reference, drop = drop, xlim = rv_range, ylim = None, loc_label = 'lower right', title = date + r' - Ca II K - 3933.7 Å')
+quick_plot(spec_dic, inst, date, line = 3968.469, reference = reference, drop = drop, xlim = rv_range, ylim = None, loc_label = 'lower right', title = date + r' - Ca II K - 3968.5 Å')
 
 
 flux_range= [0.75,1.02]
@@ -375,46 +381,57 @@ absorption_map(spec_dic, inst, date, 3968.469, reference, rv_range, flux_range, 
 ```
 
 ***
+
 # Exocomet simulations
 
 
-Here, I present a example of exocomet simulation, aimed at reproducing the high-velocity features observed on December 5, 2017 and March 30, 2018. These simulations were performed using the **EVaporating Exoplanet** code (EVE). This simulation incorporates several key physical ingredients : 
+In the remainder of this notebook, I present an example of an exocomet simulation aimed at reproducing the high-velocity features observed on December 5, 2017 and March 30, 2018. These simulations were performed using the **EVaporating Exoplanet** code (EVE), and incorporate the following physical ingredients:
 
-- We start by considering a cometary nucleus, orbiting $\beta$ Pic on a nearly parabolic orbit. Here, the periastron distance of the nucleus is 0.04 au (about $5.6 R_\star$) and the argument of periastron is 140°. The comet thus transits the star before its periastron. 
+- We start by considering a cometary nucleus, orbiting $\beta$ Pic on a nearly parabolic orbit. Here, the periastron distance of the nucleus is **0.04 au** (about $5.6\,R_\star$) and its argument of periastron is **140°**. The comet's transit thus occurs before its periastron. The impact parameter of the object is taken to be 0; the line of sight is thus included within the orbital plane.
 - The comet nucleus is assumed to only release dust particles. The production rate is taken to be proportionnal to $d^{-2}$, and is equal to $5\times10^5$ kg/s at 1 au from the star. The dust emission is isotropic, and dust grains are ejected with an escape velocity of 1 km/s.
 - Dust grain sizes range from 0.5 to 10 microns, with a size distribution $\propto r^{-3}$. Their absorption cross-section is taken to be that of spherical olivine grains, derived from Mie theory.
-- By absorbing the stellar photons, dust grains are repelled away from the star (radiation pressure) and are heated up. When hot enough (typically above 1200 K), the grains can sublimate, and their mass is entirely converted into gas. 
-- The gas particles released from dust sublimation are assumed to have a typical cometary composition, as measured in [Vrignaud et al. 2025](https://www.aanda.org/articles/aa/full_html/2025/05/aa53568-24) (A&A, 697, A21) and [Vrignaud & Lecavelier 2026](https://www.researchsquare.com/article/rs-9515646/v1) (submitted to Nature Astronomy). Metals (Fe, Mg, Si...) and Oxygen are taken to be solar; C/Fe = 20; H = 2$\times$O; and noble gas are not considered. 
-- The gas dynamics is computed by combining gravity and radiation pressure, and assuming a radiation pressure-to-gravity ratio ($\beta$) of 0.1. This reproduces the average $\beta$ factor of a gaseous tail with the elemental composition listed above and a fairly high level of ionisation ($\text{Fe}^+/\text{Fe} \sim 0.05$, $\text{Ca}^+/\text{Ca} \sim 0.005$; the rest being stored in $\text{Fe}^{2+}$ and $\text{Ca}^{2+}$). In this case, the radiation pressure is mainly dominated by Fe+ ions. 
-- Finally, the absorption signature of the comet is computed in Fe II, Mg II and Ca II lines. Importantly, the comet's signatures in those lines are ponderated by the elemental abundances of Fe, Mg and Ca, by the populations of these elements in their singly ionised states, and, for Fe II, by the excitation state, assuming an excitation temperature of 8000 K. 
+- Dust grains absorb stellar photons, which both repels them (via radiation pressure) and heats them. Above $\sim 1200$ K, grains are rapidly sublimated, and their mass is entirely converted into gas.
+- The gas particles released from dust sublimation are assumed to have a typical cometary composition, as measured in [Vrignaud et al. 2025, A&A, 697, A21](https://www.aanda.org/articles/aa/full_html/2025/05/aa53568-24) and [Vrignaud & Lecavelier 2026](https://www.researchsquare.com/article/rs-9515646/v1) (submitted to Nature Astronomy). Metals (Fe, Mg, Si...) and Oxygen abundances are taken to be solar; C/Fe = 20; H = 2 $\times$ O; and noble gas are not considered. 
+- The gas dynamics is computed by combining gravity and radiation pressure, and assuming a radiation pressure-to-gravity ratio ($\beta$) of 0.1. This reproduces the average $\beta$ factor of a gaseous tail with the above composition at a fairly high ionisation level ($\text{Fe}^+/\text{Fe} \sim 0.05$, $\text{Ca}^+/\text{Ca} \sim 0.005$; the rest being stored in $\text{Fe}^{2+}$ and $\text{Ca}^{2+}$). In this case, the average radiation pressure is dominated by $\text{Fe}^{+}$ ions. 
+- Finally, the comet's absorption signature are computed in Fe II, Mg II and Ca II lines. Importantly, the comet's signatures in those lines are ponderated by the elemental abundances of Fe, Mg and Ca, by the populations of these elements in their singly ionised states, and, for Fe II, by the excitation state, assuming an excitation temperature of 8000 K. 
 
-
-The evolution of the dust and gaseous tails of the comets are displayed in the video below, along with the comet's signatures in the two Fe II lines near 2600 A (rising from the ground and first excited state), in the Mg II k line at 2796 A, and in the Ca II K line at 3933 A. 
-
-The simulation starts when the comet is far from the star ($\sim0.4$au). At such distance, dust sublimation is not very efficient, allowing a dust tail to form. Then, when the comet gets close to the star (within $\sim 0.1$ au), the dust grains are quickly sublimated, and are transformed into gas. When the gaseous tail transit the star, it produces absorption signature in the stellar spectrum, here computed in a few Fe II, Mg II and Ca II lines. Finally, after perihelion, the comet leaves the stellar vicinity, dust grains are not sublimated anymore, and the dust tail reforms.
+The orbit is simulated over 12 days, starting 8 days before the transit, with a time step of 10 minutes.
 
 ***
 
+### Simulation movie
+
+The evolution of the dust and gas tails of the comets are displayed in the video below, along with the comet's signatures in two Fe II lines near 2600 A (rising from the ground and first excited states), in the Mg II k line at 2796 A, and in the Ca II K line at 3933 A. 
+
+Initially, the comet is far from the star ($\sim 0.4$ au), where sublimation is inefficient; a dust tail gradually builds up. When the comet approaches the within $\lesssim$0.1 au, dust grains are rapidly sublimated and converted into gas. The resulting gaseous tail then transits the star, imprinting absorption signatures in Fe II, Mg II, and Ca II lines. After perihelion, the comet moves away from the star, sublimation ceases, and the dust tail reforms.
+
 ```{python}
-Video("Full_simu.mp4", width=1800, html_attributes="controls autoplay loop")
+# Plot the simulation movie
+
+HTML("""
+<div style="text-align: center;">
+  <video width="1050" controls autoplay loop>
+    <source src="Full_simu_h264.mp4" type="video/mp4">
+  </video>
+</div>
+""")
 ```
 
-# Simulated absortion map in the Ca II K line
+### Simulated absortion map in the Ca II K line
 
-
-The comet displays a strong signature in Ca II lines from -1h to +3 relative to the nucleus mid-transit. The object acceleration is clearly visible; it reproduces well the signatures observed in the HARPS data.
+This absorption map shows the computed absorption signature of the comet in the Ca II K lines at 3933 A. The signature is particularly strong from -1 to +3 hours relative to the nucleus' mid-transit. The object acceleration is clearly visible; in that case, the orbital parameters of the comet ($q, \omega$) were tuned to reproduce the radial velocity and acceleration of the high-velocity object observed on December 5, 2017 (see above).
 
 ```{python}
-# Retrieve the simulated absorption in Fe II, Mg II and Ca II lines
+# Retrieve the modelled signatures in Fe II, Mg II and Ca II lines
 
 spec_dic_simu = np.load('Data_comet_simu.npy', allow_pickle = True).item()
 ```
 
 ```{python}
-# A function to plot the simulated comet signature around a given line over its full transit
-#     + The function builds a map showing all spectra obtained during the simulation, similarly to 'absorption_map'
+# A function to plot the simulated comet signature around a given line over the full transit
+#     + The function builds a map showing all spectra obtained during the simulation, in a similar way as the function 'absorption_map' above
 #     + 'wl_domain' can be 'Fe II', 'Mg II', 'Ca II K' or 'Ca II H'
-#     + the reference line is specified through 'line'
+#     + the reference line is specified through line = XXXX.XX
 
 def absorption_map_simu(spec_dic_simu, wl_domain, line, rv_range, flux_range, time_range = None, title = None) : 
 
@@ -455,9 +472,9 @@ def absorption_map_simu(spec_dic_simu, wl_domain, line, rv_range, flux_range, ti
 
     # Figure layout
     mt, mb = 65, 80  # marges haut et bas
-    total_height = 600 * (np.max(Y) - np.min(Y))/8 + mt + mb
-    ml, mr = 100, 150
-    total_width = 1000 + ml + mr
+    total_height = 500 * (np.max(Y) - np.min(Y))/8 + mt + mb
+    ml, mr = 120, 120
+    total_width = 850 + ml + mr
 
     fig.update_layout(
         font=dict(family='STIX Two Text'),
@@ -465,7 +482,7 @@ def absorption_map_simu(spec_dic_simu, wl_domain, line, rv_range, flux_range, ti
         font=dict(size=22),
         text=title,
         x=0.5,        
-        y= 1 - mt / total_height + 20/total_height,
+        y= 1 - mt / total_height + 12/total_height,
         xanchor='center',
         yanchor='bottom'
        ),
@@ -495,12 +512,22 @@ def absorption_map_simu(spec_dic_simu, wl_domain, line, rv_range, flux_range, ti
 
 ```{python}
 wl_domain = 'Ca II K'     
-line = 3934.78              # Angstrom
-time_range = [-2,4.5]     # hours
+line = 3933.663              # Angstrom
+time_range = [-2.5,4.]       # hours
 rv_range= (-200,200)        # km/s
 flux_range= [0.9,1.01]      # 1 = no absorption, 0.9 = 10% absorption
 
 absorption_map_simu(spec_dic_simu, wl_domain, line, rv_range, flux_range, time_range = time_range, title = r'Simulated transit - Ca II K - 3933.6 Å')
-```
 
+inst = 'HARPS'
+date = '2017-12-05'
+rv_range = [-200,200]
+reference = 'Photospheric continuum'
+flux_range= [0.9,1.01]
+timestep = 6/60
+rvstep = 2
+time_range = [2,8.5]
+
+absorption_map(spec_dic, inst, date, line, reference, rv_range, flux_range, time_range =time_range, timestep = timestep, rvstep = rvstep, title = r'Observed transit (2017-12-05) - Ca II K - 3933.6 Å')
+```
 
