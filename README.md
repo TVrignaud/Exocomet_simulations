@@ -8,7 +8,7 @@ This repository provides an interactive visualisation of an exocomet simulation 
 - `Notebook.ipynb` : Python notebook allowing the interactive visualisation of exocomet signatures observed with the HARPS spectrograph, and of the exocomet simumated with the EVE code. 
 
 ## Code use
-This repo can be easily cloned and run using `Notebook.ipynb`.
+This repo can be easily cloned from the following link: [https://github.com/TVrignaud/Exocomet_simulations](https://github.com/TVrignaud/Exocomet_simulations) and run using `Notebook.ipynb`.
 
 ## References
 - Vrignaud & Lecavelier (2026, A&A, 707, A60; https://www.aanda.org/articles/aa/abs/2026/03/aa57819-25)
